@@ -103,21 +103,16 @@ def apply_affine(dataset):
     affine = np.matmul(np.linalg.pinv(get_wcs_matrix(ref_datasets[desc])), get_wcs_matrix(dataset))
 
     img = dataset.pixel_array
-    img = (img / img.max() * 255).astype(np.uint8)
-    img = np.clip(img, np.percentile(img, 5), np.percentile(img, 95))
-    tr_img = np.zeros_like(img)
+    img = (img / img.max() * 255).astype(np.uint8).transpose()
 
+    M = np.array([[affine[0, 0], affine[0, 1], affine[0, 3]],
+                  [affine[1, 0], affine[1, 1], affine[1, 3]]])
     rows, cols = img.shape
-    for j in range(cols):
-        for i in range(rows):
-            vec = np.transpose(np.array([j, i, 0, 1]))
-            vec = np.matmul(affine, vec)
-            try:
-                tr_img[int(round(vec[0])), int(round(vec[1]))] = img[j, i]
-            except:
-                pass
 
-    return tr_img
+    tr = cv2.warpAffine(img, M, (cols, rows)).transpose()
+    tr = np.clip(tr, np.percentile(tr, 5), np.percentile(tr, 95))
+    tr = (tr / tr.max() * 255).astype(np.uint8)
+    return tr
 
 
 class ProcessedData:
@@ -127,6 +122,7 @@ class ProcessedData:
         self.imgs_lvot = []
         self.is_ill = get_ill(folder)
         self.__choose_imgs(folder)
+        self.__sort_imgs()
 
     def __choose_imgs(self, la_folder):
         la_files = sorted(os.listdir(la_folder))
@@ -144,14 +140,25 @@ class ProcessedData:
         try:
             desc = get_desc(dataset)
             img = apply_affine(dataset)
+            inst_num = dataset.InstanceNumber % 25 if dataset.InstanceNumber % 25 != 0 else 25
             if desc == DESC_2CH:
-                self.imgs_2ch.append(img)
+                if not [item for item in self.imgs_2ch if item[1] == inst_num]:
+                    self.imgs_2ch.append((img, inst_num))
             elif desc == DESC_4CH:
-                self.imgs_4ch.append(img)
+                if not [item for item in self.imgs_4ch if item[1] == inst_num]:
+                    self.imgs_4ch.append((img, inst_num))
             elif desc == DESC_LVOT:
-                self.imgs_lvot.append(img)
+                if not [item for item in self.imgs_lvot if item[1] == inst_num]:
+                    self.imgs_lvot.append((img, inst_num))
         except (ValueError, AttributeError) as e:
             print(e)
+
+    def __sort_imgs(self):
+        comp = lambda x: x[1]
+        self.imgs_2ch.sort(key=comp)
+        self.imgs_4ch.sort(key=comp)
+        self.imgs_lvot.sort(key=comp)
+        pass
 
 
 def is_dicom(file_name):
@@ -209,7 +216,7 @@ def process_la(src, dest):
     folders = sorted(os.listdir(src))
     for folder in folders:
         la_folder = os.path.join(src, folder, 'la')
-        if not is_relevant(la_folder) or not la_folder:
+        if not is_relevant(la_folder) or not os.listdir(la_folder):
             continue
 
         if last_saved is not None:
@@ -218,6 +225,11 @@ def process_la(src, dest):
             continue
 
         proc_data = ProcessedData(la_folder)
+
+        # for img in proc_data.imgs_2ch:
+        #     f, axarr = plt.subplots(1, 1)
+        #     axarr.imshow(img[0])
+        #     plt.show()
 
         with open(os.path.join(dest, folder), 'wb') as f:
             pickle.dump(proc_data, f)
