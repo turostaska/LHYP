@@ -26,7 +26,7 @@ def to_choose(dataset):
 
 
 def dist_of(vec1, vec2):
-    return math.hypot(vec1[0] - vec2[0], vec1[1] - vec2[1], vec1[2] - vec2[2])
+    return math.hypot(math.hypot(vec1[0] - vec2[0], vec1[1] - vec2[1]), vec1[2] - vec2[2])
 
 
 def get_desc(dataset):
